@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model School {
+  id        Int      @id @default(autoincrement())
+  name      String
+  city      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quizEvents QuizEvent[]
+}
+
+model QuizEvent {
+  id           Int      @id @default(autoincrement())
+  name         String    // e.g. "Antariksha Vigyaan Spardha - St. Joseph's Senior"
+  level        QuizLevel // JUNIOR or SENIOR
+  date         DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  schoolId Int
+  school   School @relation(fields: [schoolId], references: [id])
+
+  teams    Team[]
+  rounds   Round[]
+}
+
+enum QuizLevel {
+  JUNIOR
+  SENIOR
+}
+
+model Team {
+  id           Int      @id @default(autoincrement())
+  name         String   // e.g. "Team A"
+  memberNames  String?  // optional, later can be JSON
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  quizEventId Int
+  quizEvent   QuizEvent @relation(fields: [quizEventId], references: [id])
+
+  scores RoundScore[]
+}
+
+model Round {
+  id           Int       @id @default(autoincrement())
+  name         String    // "Time Teller", "Puzzle Round", etc.
+  order        Int       // 1, 2, 3, 4
+  type         RoundType // TIME_TELLER, PUZZLE, RAPID_FIRE, BUZZER
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  quizEventId Int
+  quizEvent   QuizEvent @relation(fields: [quizEventId], references: [id])
+  
+  questions  Question[]
+  scores     RoundScore[]
+}
+
+enum RoundType {
+  TIME_TELLER
+  PUZZLE
+  RAPID_FIRE
+  BUZZER
+}
+
+model Question {
+  id             Int        @id @default(autoincrement())
+  text           String
+  optionA        String
+  optionB        String
+  optionC        String
+  optionD        String
+  correctOption  QuestionOption
+  points         Int
+  timeLimitSec   Int        // e.g. 30, 60
+  orderInRound   Int        // question sequence
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  roundId Int
+  round   Round @relation(fields: [roundId], references: [id])
+
+  // later we can add type for puzzle (image, text, etc.)
+}
+
+enum QuestionOption {
+  A
+  B
+  C
+  D
+}
+
+model RoundScore {
+  id           Int      @id @default(autoincrement())
+  teamId       Int
+  roundId      Int
+  score        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  team  Team  @relation(fields: [teamId], references: [id])
+  round Round @relation(fields: [roundId], references: [id])
+}
