@@ -18,18 +18,20 @@ model School {
 }
 
 model QuizEvent {
-  id        Int       @id @default(autoincrement())
-  name      String // e.g. "St.Joseph Senior 2025"
-  level     QuizLevel
-  date      DateTime
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id    Int       @id @default(autoincrement())
+  name  String
+  date  DateTime
+  level QuizLevel
 
   schoolId Int
   school   School @relation(fields: [schoolId], references: [id])
 
-  teams  Team[]
-  rounds Round[]
+  rounds      Round[]
+  teams       Team[]
+  roundScores RoundScore[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum QuizLevel {
@@ -38,35 +40,32 @@ enum QuizLevel {
 }
 
 model Team {
-  id         Int      @id @default(autoincrement())
-  name       String
-  color      String? // optional, for UI
-  totalScore Int      @default(0)
-  used5050   Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id    Int    @id @default(autoincrement())
+  name  String
+  score Int    @default(0)
 
   quizEventId Int
   quizEvent   QuizEvent @relation(fields: [quizEventId], references: [id])
 
   answers      AnswerLog[]
   buzzerEvents BuzzerEvent[]
-  scores       RoundScore[]
+  roundScores  RoundScore[]
 }
 
 model Round {
-  id        Int       @id @default(autoincrement())
-  name      String
-  order     Int
-  type      RoundType
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id    Int       @id @default(autoincrement())
+  name  String
+  order Int
+  type  RoundType
 
   quizEventId Int
   quizEvent   QuizEvent @relation(fields: [quizEventId], references: [id])
 
   questions   Question[]
-  roundScores RoundScore[] // <-- FIX added
+  roundScores RoundScore[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum RoundType {
@@ -130,8 +129,10 @@ model RoundScore {
   roundId Int
   score   Int @default(0)
 
-  team  Team  @relation(fields: [teamId], references: [id])
-  round Round @relation(fields: [roundId], references: [id])
+  team        Team       @relation(fields: [teamId], references: [id])
+  round       Round      @relation(fields: [roundId], references: [id])
+  quizEvent   QuizEvent? @relation(fields: [quizEventId], references: [id])
+  quizEventId Int?
 }
 
 model BuzzerEvent {
