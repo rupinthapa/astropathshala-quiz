@@ -18,18 +18,18 @@ model School {
 }
 
 model QuizEvent {
-  id           Int      @id @default(autoincrement())
-  name         String    // e.g. "Antariksha Vigyaan Spardha - St. Joseph's Senior"
-  level        QuizLevel // JUNIOR or SENIOR
-  date         DateTime
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        Int       @id @default(autoincrement())
+  name      String // e.g. "St.Joseph Senior 2025"
+  level     QuizLevel
+  date      DateTime
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   schoolId Int
   school   School @relation(fields: [schoolId], references: [id])
 
-  teams    Team[]
-  rounds   Round[]
+  teams  Team[]
+  rounds Round[]
 }
 
 enum QuizLevel {
@@ -38,31 +38,35 @@ enum QuizLevel {
 }
 
 model Team {
-  id           Int      @id @default(autoincrement())
-  name         String   // e.g. "Team A"
-  memberNames  String?  // optional, later can be JSON
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id         Int      @id @default(autoincrement())
+  name       String
+  color      String? // optional, for UI
+  totalScore Int      @default(0)
+  used5050   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   quizEventId Int
   quizEvent   QuizEvent @relation(fields: [quizEventId], references: [id])
 
-  scores RoundScore[]
+  answers      AnswerLog[]
+  buzzerEvents BuzzerEvent[]
+  scores       RoundScore[]
 }
 
 model Round {
-  id           Int       @id @default(autoincrement())
-  name         String    // "Time Teller", "Puzzle Round", etc.
-  order        Int       // 1, 2, 3, 4
-  type         RoundType // TIME_TELLER, PUZZLE, RAPID_FIRE, BUZZER
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id        Int       @id @default(autoincrement())
+  name      String
+  order     Int
+  type      RoundType
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   quizEventId Int
   quizEvent   QuizEvent @relation(fields: [quizEventId], references: [id])
-  
-  questions  Question[]
-  scores     RoundScore[]
+
+  questions   Question[]
+  roundScores RoundScore[] // <-- FIX added
 }
 
 enum RoundType {
@@ -73,23 +77,31 @@ enum RoundType {
 }
 
 model Question {
-  id             Int        @id @default(autoincrement())
-  text           String
-  optionA        String
-  optionB        String
-  optionC        String
-  optionD        String
-  correctOption  QuestionOption
-  points         Int
-  timeLimitSec   Int        // e.g. 30, 60
-  orderInRound   Int        // question sequence
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  id            Int             @id @default(autoincrement())
+  text          String
+  optionA       String?
+  optionB       String?
+  optionC       String?
+  optionD       String?
+  correctOption QuestionOption?
+  mediaURL      String?
+  timeLimitSec  Int
+  points        Int
+  orderInRound  Int
+  type          QuestionType
 
   roundId Int
   round   Round @relation(fields: [roundId], references: [id])
 
-  // later we can add type for puzzle (image, text, etc.)
+  answers      AnswerLog[]
+  buzzerEvents BuzzerEvent[] // <-- FIX added
+}
+
+enum QuestionType {
+  MCQ
+  PUZZLE
+  RAPID
+  BUZZER
 }
 
 enum QuestionOption {
@@ -99,14 +111,35 @@ enum QuestionOption {
   D
 }
 
+model AnswerLog {
+  id             Int             @id @default(autoincrement())
+  teamId         Int
+  questionId     Int
+  selectedOption QuestionOption?
+  isCorrect      Boolean
+  pointsAwarded  Int
+  answeredAt     DateTime        @default(now())
+
+  team     Team     @relation(fields: [teamId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+}
+
 model RoundScore {
-  id           Int      @id @default(autoincrement())
-  teamId       Int
-  roundId      Int
-  score        Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id      Int @id @default(autoincrement())
+  teamId  Int
+  roundId Int
+  score   Int @default(0)
 
   team  Team  @relation(fields: [teamId], references: [id])
   round Round @relation(fields: [roundId], references: [id])
+}
+
+model BuzzerEvent {
+  id         Int      @id @default(autoincrement())
+  teamId     Int
+  questionId Int
+  pressedAt  DateTime @default(now())
+
+  team     Team     @relation(fields: [teamId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
 }
