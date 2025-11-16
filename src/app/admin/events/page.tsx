@@ -35,13 +35,21 @@ export default async function EventsPage() {
       <h3>Existing Events</h3>
 
       <ul>
-        {events.map(e => (
-          <li key={e.id}>
-            <strong>{e.name}</strong> — {e.school.name} ({e.level})  
-            — {e.date.toDateString()}
-          </li>
-        ))}
-      </ul>
+  {events.map(e => (
+    <li key={e.id} style={{ marginTop: "10px" }}>
+      <strong>{e.name}</strong> — {e.school.name} ({e.level})  
+      — {e.date.toDateString()}{" "}
+      
+      <a 
+        href={`/admin/events/${e.id}/questions`}
+        style={{ marginLeft: "20px", textDecoration: "underline" }}
+      >
+        Manage Questions
+      </a>
+    </li>
+  ))}
+</ul>
+
     </div>
   );
 }
