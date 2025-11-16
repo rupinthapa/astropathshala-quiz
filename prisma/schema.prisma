@@ -30,6 +30,8 @@ model QuizEvent {
   teams       Team[]
   roundScores RoundScore[]
 
+  eventState EventState?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -143,4 +145,20 @@ model BuzzerEvent {
 
   team     Team     @relation(fields: [teamId], references: [id])
   question Question @relation(fields: [questionId], references: [id])
+}
+
+model EventState {
+  id      Int       @id @default(autoincrement())
+  eventId Int       @unique
+  event   QuizEvent @relation(fields: [eventId], references: [id])
+
+  currentRoundId    Int?
+  currentQuestionId Int?
+
+  isAnswerRevealed Boolean   @default(false)
+  isFiftyUsed      Boolean   @default(false) // for current team in Round 1
+  timerDeadline    DateTime? // when current timer will end (now + 30s / 60s)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
