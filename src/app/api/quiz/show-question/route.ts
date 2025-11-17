@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { pusherServer } from "@/lib/pusher-server";
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { roundId, questionId } = body;
+  const data = await req.json();
 
-  await pusherServer.trigger(`round-${roundId}`, "show-question", {
-    questionId,
+  await pusherServer.trigger(`round-${data.roundId}`, "show-question", {
+    questionId: data.questionId,
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ status: "ok" });
 }
