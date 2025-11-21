@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
+import "@/styles/quiz-ui.css";
 
-// API base for Hono server
-const API = "http://localhost:3001";
+const API_BASE = "http://localhost:3000"; // Hono server
 
 type Question = {
   id: number;
@@ -37,32 +37,25 @@ export default function RoundHostClient({
   roundName,
   questions,
 }: Props) {
-  // Current question index
+  // Which question host is viewing
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentQuestion = questions[currentIndex];
 
-  // UI state
-  const [timeLeft, setTimeLeft] = useState(currentQuestion?.timeLimitSec ?? 30);
+  // Local UI state
+  const [timeLeft, setTimeLeft] = useState(
+    currentQuestion?.timeLimitSec ?? 30
+  );
   const [timerRunning, setTimerRunning] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<OptionKey | null>(null);
+  const [selectedOption, setSelectedOption] =
+    useState<OptionKey | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [used5050, setUsed5050] = useState(false);
   const [hiddenOptions, setHiddenOptions] = useState<OptionKey[]>([]);
-  const [loading, setLoading] = useState<{
-    showQuestion: boolean;
-    revealAnswer: boolean;
-    startTimer: boolean;
-  }>({
-    showQuestion: false,
-    revealAnswer: false,
-    startTimer: false,
-  });
-  const [error, setError] = useState<string | null>(null);
+  const [loadingAction, setLoadingAction] = useState(false);
 
-  // Reset UI when question changes
+  // When question changes → reset UI
   useEffect(() => {
     if (!currentQuestion) return;
-
     setTimeLeft(currentQuestion.timeLimitSec || 30);
     setTimerRunning(false);
     setSelectedOption(null);
@@ -71,318 +64,223 @@ export default function RoundHostClient({
     setHiddenOptions([]);
   }, [currentQuestion?.id]);
 
-  // TIMER LOGIC
+  // Local countdown
   useEffect(() => {
-    if (!timerRunning || timeLeft <= 0) {
-      if (timeLeft === 0) {
-        setTimerRunning(false);
-      }
-      return;
-    }
+    if (!timerRunning || timeLeft <= 0) return;
 
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setTimerRunning(false);
-          return 0;
-        }
-        return prev - 1;
-      });
+    const id = setInterval(() => {
+      setTimeLeft((t) => (t > 0 ? t - 1 : 0));
     }, 1000);
 
-    return () => clearInterval(timer);
+    return () => clearInterval(id);
   }, [timerRunning, timeLeft]);
 
-  // Build options array
+  // Build option list
   const options = useMemo(() => {
     if (!currentQuestion) return [];
+
     return [
-      { key: "A", label: "A", value: currentQuestion.optionA },
-      { key: "B", label: "B", value: currentQuestion.optionB },
-      { key: "C", label: "C", value: currentQuestion.optionC },
-      { key: "D", label: "D", value: currentQuestion.optionD },
+      { key: "A" as OptionKey, label: "A", value: currentQuestion.optionA },
+      { key: "B" as OptionKey, label: "B", value: currentQuestion.optionB },
+      { key: "C" as OptionKey, label: "C", value: currentQuestion.optionC },
+      { key: "D" as OptionKey, label: "D", value: currentQuestion.optionD },
     ].filter((o) => o.value !== null);
   }, [currentQuestion]);
 
-  if (!currentQuestion) return <div>No questions found.</div>;
-
-  // -------------------------
-  // API Calls
-  // -------------------------
-  const showQuestion = useCallback(async () => {
+  // ---------------------------
+  // Hono API Helper
+  // ---------------------------
+  const callApi = async (path: string, data: any) => {
+    setLoadingAction(true);
     try {
-      setLoading(prev => ({ ...prev, showQuestion: true }));
-      setError(null);
-      
-      const response = await fetch(`${API}/show-question`, {
+      const res = await fetch(`${API_BASE}${path}`, {
         method: "POST",
-        body: JSON.stringify({
-          roundId,
-          questionId: currentQuestion.id,
-        }),
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
       });
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to show question');
+      if (!res.ok) {
+        console.error("API error", path, await res.text());
       }
-      
-      // Update UI state
-      setRevealed(false);
-      setTimerRunning(false);
-      setSelectedOption(null);
-      
-      return data.data; // Return the response data
+
+      return await res.json();
     } catch (err) {
-      console.error('Error showing question:', err);
-      setError(err instanceof Error ? err.message : 'Failed to show question. Please try again.');
-      throw err; // Re-throw to allow error handling in the component
+      console.error("API call failed:", err);
     } finally {
-      setLoading(prev => ({ ...prev, showQuestion: false }));
+      setLoadingAction(false);
     }
-  }, [roundId, currentQuestion?.id]);
+  };
 
-  const revealAnswer = useCallback(async () => {
-    try {
-      setLoading(prev => ({ ...prev, revealAnswer: true }));
-      setError(null);
-      
-      const response = await fetch(`${API}/reveal-answer`, {
-        method: "POST",
-        body: JSON.stringify({
-          roundId,
-          questionId: currentQuestion.id,
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
+  const showQuestion = async () => {
+    await callApi("/show-question", {
+      roundId,
+      questionId: currentQuestion.id,
+    });
+  };
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to reveal answer');
-      }
-      
-      setRevealed(true);
-      return data.data;
-    } catch (err) {
-      console.error('Error revealing answer:', err);
-      setError(err instanceof Error ? err.message : 'Failed to reveal answer. Please try again.');
-      throw err;
-    } finally {
-      setLoading(prev => ({ ...prev, revealAnswer: false }));
-    }
-  }, [roundId, currentQuestion?.id]);
+  const revealAnswer = async () => {
+    await callApi("/reveal-answer", {
+      roundId,
+      questionId: currentQuestion.id,
+    });
+    setRevealed(true); // update UI
+  };
 
-  const startTimer = useCallback(async () => {
-    try {
-      setLoading(prev => ({ ...prev, startTimer: true }));
-      setError(null);
-      
-      const response = await fetch(`${API}/start-timer`, {
-        method: "POST",
-        body: JSON.stringify({
-          roundId,
-          duration: currentQuestion.timeLimitSec || 30,
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
+  const startTimer = async () => {
+    await callApi("/start-timer", {
+      roundId,
+      duration: currentQuestion.timeLimitSec || 30,
+    });
+    setTimerRunning(true); // local UI timer
+  };
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to start timer');
-      }
-      
-      // Start the timer locally
-      setTimerRunning(true);
-      const timer = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            setTimerRunning(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      
-      // Store the timer ID to clear it later
-      return () => clearInterval(timer);
-    } catch (err) {
-      console.error('Error starting timer:', err);
-      setError(err instanceof Error ? err.message : 'Failed to start timer. Please try again.');
-      throw err;
-    } finally {
-      setLoading(prev => ({ ...prev, startTimer: false }));
-    }
-  }, [roundId, currentQuestion?.timeLimitSec]);
-  
-  // Fetch initial round state
-  useEffect(() => {
-    const fetchRoundState = async () => {
-      try {
-        const response = await fetch(`${API}/round/${roundId}/state`);
-        const data = await response.json();
-        
-        if (data.success && data.data) {
-          const { currentQuestionId, isAnswerRevealed, isTimerRunning, timeLeft } = data.data;
-          
-          if (currentQuestionId) {
-            // Find the index of the current question
-            const questionIndex = questions.findIndex(q => q.id === currentQuestionId);
-            if (questionIndex >= 0) {
-              setCurrentIndex(questionIndex);
-            }
-          }
-          
-          setRevealed(!!isAnswerRevealed);
-          setTimerRunning(!!isTimerRunning);
-          setTimeLeft(timeLeft || 30);
-        }
-      } catch (err) {
-        console.error('Error fetching round state:', err);
-      }
-    };
-    
-    fetchRoundState();
-  }, [roundId, questions]);
-
-  // 50:50 logic
+  // 50:50
   const handle5050 = () => {
     if (used5050 || !currentQuestion.correctOption) return;
-    const wrong = options
+
+    const wrongOptions = options
       .map((o) => o.key)
       .filter((k) => k !== currentQuestion.correctOption);
-    setHiddenOptions(wrong.slice(0, 2));
+
+    setHiddenOptions(wrongOptions.slice(0, 2));
     setUsed5050(true);
   };
 
   const canGoNext = currentIndex < questions.length - 1;
 
+  // ---------------------------
+  // UI
+  // ---------------------------
   return (
-    <div style={{ padding: 20 }}>
+    <div className="quiz-page">
       <h1>Host Panel — {roundName}</h1>
-      <h3>{eventName} — {schoolName}</h3>
+      <h2>
+        {eventName} — {schoolName}
+      </h2>
 
-      {/* HOST ACTION BUTTONS */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-        <button 
-          onClick={showQuestion} 
-          disabled={loading.showQuestion}
-          style={{ opacity: loading.showQuestion ? 0.7 : 1 }}
+      {/* ACTION BUTTONS */}
+      <div className="quiz-toolbar">
+        <button
+          className="quiz-btn quiz-btn-primary"
+          onClick={showQuestion}
+          disabled={loadingAction}
         >
-          {loading.showQuestion ? 'Loading...' : '📡 Show Question'}
+          🛰 Show Question
         </button>
-        <button 
+
+        <button
+          className="quiz-btn quiz-btn-accent"
           onClick={revealAnswer}
-          disabled={revealed || loading.revealAnswer}
-          style={{ opacity: (revealed || loading.revealAnswer) ? 0.7 : 1 }}
+          disabled={loadingAction}
         >
-          {loading.revealAnswer ? 'Loading...' : '🟩 Reveal Answer'}
+          ✅ Reveal
         </button>
-        <button 
+
+        <button
+          className="quiz-btn quiz-btn-outline"
           onClick={startTimer}
-          disabled={timerRunning || loading.startTimer}
-          style={{ opacity: (timerRunning || loading.startTimer) ? 0.7 : 1 }}
+          disabled={loadingAction}
         >
-          {loading.startTimer ? 'Loading...' : '⏳ Start Timer'}
-        </button>
-      </div>
-      
-      {/* ERROR MESSAGE */}
-      {error && (
-        <div style={{ 
-          color: 'red', 
-          margin: '10px 0',
-          padding: '10px',
-          background: '#ffebee',
-          borderRadius: '4px'
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* TIMER */}
-      <div style={{ marginBottom: 12 }}>
-        <strong>Timer:</strong> {timeLeft}s
-        <button onClick={() => setTimerRunning((v) => !v)} style={{ marginLeft: 8 }}>
-          {timerRunning ? "Pause" : "Start"}
-        </button>
-        <button onClick={() => setTimeLeft(currentQuestion.timeLimitSec)} style={{ marginLeft: 8 }}>
-          Reset
-        </button>
-        <button
-          onClick={handle5050}
-          disabled={used5050}
-          style={{ marginLeft: 16 }}
-        >
-          50:50 {used5050 ? "(used)" : ""}
+          ⏳ Start Timer
         </button>
       </div>
 
-      {/* QUESTION */}
-      <div><strong>Q{currentQuestion.orderInRound}</strong></div>
-      <p style={{ fontSize: 20 }}>{currentQuestion.text}</p>
+      <div className="quiz-card">
+        {/* TIMER ROW */}
+        <div className="quiz-timer-row">
+          <div>
+            <span className="quiz-timer-label">Timer:</span>{" "}
+            <span className="quiz-timer-value">{timeLeft}s</span>
 
-      {/* OPTIONS GRID */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 12,
-        marginTop: 12
-      }}>
-        {options.map((opt) => {
-          const isCorrect = revealed && currentQuestion.correctOption === opt.key;
-          const isWrong = revealed && selectedOption === opt.key && !isCorrect;
-          const hidden = hiddenOptions.includes(opt.key);
-
-          return (
             <button
-              key={opt.key}
-              disabled={hidden}
-              onClick={() => setSelectedOption(opt.key)}
-              style={{
-                padding: 12,
-                borderRadius: 8,
-                textAlign: "left",
-                opacity: hidden ? 0.3 : 1,
-                background: isCorrect
-                  ? "#14532d"
-                  : isWrong
-                  ? "#7f1d1d"
-                  : "#222",
-                border:
-                  selectedOption === opt.key
-                    ? "2px solid #eab308"
-                    : "1px solid #444",
-                color: "white",
-              }}
+              className="quiz-btn quiz-btn-small"
+              onClick={() => setTimerRunning((v) => !v)}
             >
-              <strong>{opt.label}.</strong> {opt.value}
+              {timerRunning ? "Pause" : "Start"}
             </button>
-          );
-        })}
-      </div>
 
-      {/* NAVIGATION */}
-      <div style={{ marginTop: 20, display: "flex", gap: 12 }}>
-        <button
-          disabled={currentIndex === 0}
-          onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-        >
-          Previous
-        </button>
-        <button
-          disabled={!canGoNext}
-          onClick={() => setCurrentIndex((i) =>
-            i < questions.length - 1 ? i + 1 : i
-          )}
-        >
-          Next
-        </button>
+            <button
+              className="quiz-btn quiz-btn-small"
+              onClick={() =>
+                setTimeLeft(currentQuestion.timeLimitSec || 30)
+              }
+            >
+              Reset
+            </button>
+          </div>
+
+          <button
+            className="quiz-btn quiz-btn-small quiz-btn-outline"
+            onClick={handle5050}
+            disabled={used5050}
+          >
+            50:50 {used5050 ? "(used)" : ""}
+          </button>
+        </div>
+
+        {/* QUESTION HEADER */}
+        <div className="quiz-qmeta">
+          <span>
+            Q{currentQuestion.orderInRound} / {questions.length}
+          </span>
+        </div>
+
+        {/* QUESTION TEXT */}
+        <p className="quiz-question-text">{currentQuestion.text}</p>
+
+        {/* OPTIONS */}
+        <div className="quiz-options-grid">
+          {options.map((opt) => {
+            const isCorrect =
+              revealed && currentQuestion.correctOption === opt.key;
+
+            const isWrong =
+              revealed &&
+              selectedOption === opt.key &&
+              currentQuestion.correctOption !== opt.key;
+
+            const hidden = hiddenOptions.includes(opt.key);
+
+            const classes = [
+              "quiz-option-btn",
+              isCorrect && "quiz-option-correct",
+              isWrong && "quiz-option-wrong",
+              hidden && "quiz-option-hidden",
+            ]
+              .filter(Boolean)
+              .join(" ");
+
+            return (
+              <button
+                key={opt.key}
+                className={classes}
+                disabled={hidden}
+                onClick={() => setSelectedOption(opt.key)}
+              >
+                <strong>{opt.label}.</strong> {opt.value}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* NAVIGATION */}
+        <div className="quiz-nav-row">
+          <button
+            className="quiz-btn quiz-btn-small"
+            disabled={currentIndex === 0}
+            onClick={() => setCurrentIndex((i) => i - 1)}
+          >
+            Previous
+          </button>
+
+          <button
+            className="quiz-btn quiz-btn-small"
+            disabled={!canGoNext}
+            onClick={() => setCurrentIndex((i) => i + 1)}
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

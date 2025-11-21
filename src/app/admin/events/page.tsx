@@ -1,55 +1,55 @@
+import AdminLayout from "../AdminLayout";
 import { prisma } from "@/lib/prisma";
 
 export default async function EventsPage() {
-  const schools = await prisma.school.findMany({ orderBy: { name: "asc" }});
+  const schools = await prisma.school.findMany({ orderBy: { name: "asc" } });
   const events = await prisma.quizEvent.findMany({
     include: { school: true },
-    orderBy: { id: "desc" }
+    orderBy: { id: "desc" },
   });
 
   return (
-    <div>
-      <h2>Create Quiz Event</h2>
+    <AdminLayout>
+      <h2 className="quiz-title-secondary">Create Quiz Event</h2>
 
-      <form action="/admin/events/create" method="post" style={{ marginBottom: "30px" }}>
-        <select name="schoolId" required>
+      {/* CREATE EVENT FORM */}
+      <form action="/admin/events/create" method="post" className="quiz-form">
+
+        <label className="quiz-label">Select School</label>
+        <select name="schoolId" className="quiz-input" required>
           <option value="">Select School</option>
-          {schools.map(s => (
+          {schools.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
 
-        <select name="level" required>
+        <label className="quiz-label">Select Level</label>
+        <select name="level" className="quiz-input" required>
           <option value="">Select Level</option>
           <option value="JUNIOR">Junior</option>
           <option value="SENIOR">Senior</option>
         </select>
 
-        <input type="date" name="date" required />
+        <label className="quiz-label">Event Name</label>
+        <input name="name" className="quiz-input" placeholder="Quiz Name" required />
 
-        <input name="eventName" placeholder="Event Name (optional)" />
-
-        <button type="submit">Create Event</button>
+        <button type="submit" className="quiz-btn quiz-btn-primary" style={{ marginTop: 20 }}>
+          Create Event
+        </button>
       </form>
 
-      <h3>Existing Events</h3>
-
-      <ul>
-  {events.map(e => (
-    <li key={e.id} style={{ marginTop: "10px" }}>
-      <strong>{e.name}</strong> — {e.school.name} ({e.level})  
-      — {e.date.toDateString()}{" "}
-      
-      <a 
-        href={`/admin/events/${e.id}/questions`}
-        style={{ marginLeft: "20px", textDecoration: "underline" }}
-      >
-        Manage Questions
-      </a>
-    </li>
-  ))}
-</ul>
-
-    </div>
+      {/* EVENTS LIST */}
+      <h2 className="quiz-title-secondary" style={{ marginTop: 40 }}>All Quiz Events</h2>
+      <ul className="quiz-list">
+        {events.map((e) => (
+          <li key={e.id} className="quiz-list-item">
+            <span>{e.name} — {e.school?.name}</span>
+            <a href={`/admin/events/${e.id}`} className="quiz-btn quiz-btn-small">
+              Manage
+            </a>
+          </li>
+        ))}
+      </ul>
+    </AdminLayout>
   );
 }

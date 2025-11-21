@@ -1,165 +1,181 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { serve } from '@hono/node-server';
+import { serve } from "@hono/node-server";
 
 const app = new Hono();
 
-// Enhanced CORS configuration
-app.use('*', cors({
-  origin: ['http://localhost:3000'],
-  allowHeaders: ['Content-Type'],
-  allowMethods: ['POST', 'GET', 'OPTIONS'],
-  maxAge: 600,
-  credentials: true,
-}));
+// CORS for Next.js (3001)
+app.use(
+  "*",
+  cors({
+    origin: ["http://localhost:3001"],
+    allowHeaders: ["Content-Type"],
+    allowMethods: ["POST", "GET", "OPTIONS"],
+    maxAge: 600,
+    credentials: true,
+  })
+);
 
-// In-memory store for round state
-const roundStates = new Map<string, {
-  currentQuestionId?: number;
+// In-memory round state
+type RoundState = {
+  currentQuestionId: number | null;
   isAnswerRevealed: boolean;
   isTimerRunning: boolean;
-  timeLeft: number;
-}>();
+  timeLeft: number; // just the initial duration; countdown happens on clients
+};
 
-// Health check endpoint
-app.get('/health', (c) => {
-  return c.json({ status: 'ok' });
+const roundStates = new Map<string, RoundState>();
+
+const getRoundKey = (roundId: string | number) => `round-${roundId}`;
+
+// ------------ HEALTH ------------
+app.get("/health", (c) => {
+  return c.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    environment: "development",
+  });
 });
 
-// ----------- SHOW QUESTION -----------
+// ------------ SHOW QUESTION ------------
 app.post("/show-question", async (c) => {
   try {
-    const { roundId, questionId } = await c.req.json();
-    
+    const body = await c.req.json();
+    const { roundId, questionId } = body as {
+      roundId?: number | string;
+      questionId?: number;
+    };
+
     if (!roundId || !questionId) {
-      return c.json({ success: false, error: 'Missing roundId or questionId' }, 400);
+      return c.json(
+        { success: false, error: "Missing roundId or questionId" },
+        400
+      );
     }
 
-    // Update round state
-    roundStates.set(`round-${roundId}`, {
+    const key = getRoundKey(roundId);
+
+    const prev = roundStates.get(key);
+    const next: RoundState = {
       currentQuestionId: questionId,
       isAnswerRevealed: false,
-      isTimerRunning: false,
-      timeLeft: 30 // Default time limit
-    });
+      isTimerRunning: prev?.isTimerRunning ?? false,
+      timeLeft: prev?.timeLeft ?? 30,
+    };
 
-    return c.json({ 
-      success: true, 
-      data: { 
-        questionId,
-        message: 'Question shown successfully' 
-      } 
+    roundStates.set(key, next);
+
+    return c.json({
+      success: true,
+      data: next,
     });
-  } catch (error) {
-    console.error('Error in show-question:', error);
-    return c.json({ success: false, error: 'Internal server error' }, 500);
+  } catch (err) {
+    console.error("show-question error:", err);
+    return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
 
-// ----------- REVEAL ANSWER ----------
+// ------------ REVEAL ANSWER ------------
 app.post("/reveal-answer", async (c) => {
   try {
-    const { roundId, questionId } = await c.req.json();
-    
-    if (!roundId || !questionId) {
-      return c.json({ success: false, error: 'Missing roundId or questionId' }, 400);
-    }
-
-    const roundKey = `round-${roundId}`;
-    const roundState = roundStates.get(roundKey) || {
-      currentQuestionId: questionId,
-      isAnswerRevealed: false,
-      isTimerRunning: false,
-      timeLeft: 30
+    const body = await c.req.json();
+    const { roundId, questionId } = body as {
+      roundId?: number | string;
+      questionId?: number;
     };
 
-    // Update round state
-    roundState.isAnswerRevealed = true;
-    roundStates.set(roundKey, roundState);
+    if (!roundId || !questionId) {
+      return c.json(
+        { success: false, error: "Missing roundId or questionId" },
+        400
+      );
+    }
 
-    return c.json({ 
-      success: true, 
-      data: { 
-        questionId,
-        isAnswerRevealed: true,
-        message: 'Answer revealed successfully' 
-      } 
-    });
-  } catch (error) {
-    console.error('Error in reveal-answer:', error);
-    return c.json({ success: false, error: 'Internal server error' }, 500);
+    const key = getRoundKey(roundId);
+    const prev = roundStates.get(key);
+
+    const next: RoundState = {
+      currentQuestionId: prev?.currentQuestionId ?? questionId,
+      isAnswerRevealed: true,
+      isTimerRunning: prev?.isTimerRunning ?? false,
+      timeLeft: prev?.timeLeft ?? 30,
+    };
+
+    roundStates.set(key, next);
+
+    return c.json({ success: true, data: next });
+  } catch (err) {
+    console.error("reveal-answer error:", err);
+    return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
 
-// ----------- START TIMER -------------
+// ------------ START TIMER ------------
 app.post("/start-timer", async (c) => {
   try {
-    const { roundId, duration } = await c.req.json();
-    
-    if (!roundId) {
-      return c.json({ success: false, error: 'Missing roundId' }, 400);
-    }
-
-    const roundKey = `round-${roundId}`;
-    const roundState = roundStates.get(roundKey) || {
-      currentQuestionId: undefined,
-      isAnswerRevealed: false,
-      isTimerRunning: false,
-      timeLeft: duration || 30
+    const body = await c.req.json();
+    const { roundId, duration } = body as {
+      roundId?: number | string;
+      duration?: number;
     };
 
-    // Update round state
-    roundState.isTimerRunning = true;
-    roundState.timeLeft = duration || roundState.timeLeft || 30;
-    roundStates.set(roundKey, roundState);
+    if (!roundId) {
+      return c.json({ success: false, error: "Missing roundId" }, 400);
+    }
 
-    return c.json({ 
-      success: true, 
-      data: { 
-        duration: roundState.timeLeft,
-        isTimerRunning: true,
-        message: 'Timer started successfully' 
-      } 
-    });
-  } catch (error) {
-    console.error('Error in start-timer:', error);
-    return c.json({ success: false, error: 'Internal server error' }, 500);
+    const key = getRoundKey(roundId);
+    const prev = roundStates.get(key);
+
+    const seconds = duration && duration > 0 ? duration : prev?.timeLeft ?? 30;
+
+    const next: RoundState = {
+      currentQuestionId: prev?.currentQuestionId ?? null,
+      isAnswerRevealed: prev?.isAnswerRevealed ?? false,
+      isTimerRunning: true,
+      timeLeft: seconds,
+    };
+
+    roundStates.set(key, next);
+
+    return c.json({ success: true, data: next });
+  } catch (err) {
+    console.error("start-timer error:", err);
+    return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
 
-// ----------- GET ROUND STATE -------------
-app.get('/round/:roundId/state', async (c) => {
+// ------------ GET ROUND STATE ------------
+app.get("/round/:roundId/state", (c) => {
   try {
-    const roundId = c.req.param('roundId');
-    const roundState = roundStates.get(`round-${roundId}`);
-    
-    if (!roundState) {
-      return c.json({ 
-        success: true, 
-        data: { 
+    const roundId = c.req.param("roundId");
+    const key = getRoundKey(roundId);
+    const state = roundStates.get(key);
+
+    if (!state) {
+      // default blank state
+      return c.json({
+        success: true,
+        data: {
           currentQuestionId: null,
           isAnswerRevealed: false,
           isTimerRunning: false,
-          timeLeft: 30
-        } 
+          timeLeft: 30,
+        } satisfies RoundState,
       });
     }
 
-    return c.json({ 
-      success: true, 
-      data: roundState 
-    });
-  } catch (error) {
-    console.error('Error getting round state:', error);
-    return c.json({ success: false, error: 'Internal server error' }, 500);
+    return c.json({ success: true, data: state });
+  } catch (err) {
+    console.error("get round state error:", err);
+    return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
 
-// Start the server
-const port = 3001;
-console.log(`Server is running on http://localhost:${port}`);
+// ------------ START SERVER ------------
+const port = 3000;
+console.log(`Hono server running at http://localhost:${port}`);
 
 serve({
   fetch: app.fetch,
-  port
+  port,
 });

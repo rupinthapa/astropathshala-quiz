@@ -1,6 +1,6 @@
 // src/app/screen/[eventId]/page.tsx
 "use client";
-
+import "@/styles/quiz-ui.css";
 import { useEffect, useState } from "react";
 
 type Question = {
