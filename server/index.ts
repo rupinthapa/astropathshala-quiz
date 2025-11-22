@@ -8,7 +8,7 @@ const app = new Hono();
 app.use(
   "*",
   cors({
-    origin: ["http://localhost:3001"],
+    origin: ["http://localhost:3001", "http://localhost:3000"],
     allowHeaders: ["Content-Type"],
     allowMethods: ["POST", "GET", "OPTIONS"],
     maxAge: 600,
@@ -21,12 +21,31 @@ type RoundState = {
   currentQuestionId: number | null;
   isAnswerRevealed: boolean;
   isTimerRunning: boolean;
-  timeLeft: number; // just the initial duration; countdown happens on clients
+  timeLeft: number;
+  timerStartTime?: number; // timestamp when timer started
+  hiddenOptions?: string[]; // for 50:50
 };
 
 const roundStates = new Map<string, RoundState>();
 
 const getRoundKey = (roundId: string | number) => `round-${roundId}`;
+
+// Helper to get current time left (accounting for elapsed time)
+const getActualTimeLeft = (state: RoundState): number => {
+  if (!state.isTimerRunning || !state.timerStartTime) {
+    return state.timeLeft;
+  }
+  
+  const elapsed = Math.floor((Date.now() - state.timerStartTime) / 1000);
+  const remaining = Math.max(0, state.timeLeft - elapsed);
+  
+  // Auto-stop timer if time is up
+  if (remaining === 0) {
+    state.isTimerRunning = false;
+  }
+  
+  return remaining;
+};
 
 // ------------ HEALTH ------------
 app.get("/health", (c) => {
@@ -54,16 +73,19 @@ app.post("/show-question", async (c) => {
     }
 
     const key = getRoundKey(roundId);
-
     const prev = roundStates.get(key);
+
     const next: RoundState = {
       currentQuestionId: questionId,
       isAnswerRevealed: false,
-      isTimerRunning: prev?.isTimerRunning ?? false,
+      isTimerRunning: false,
       timeLeft: prev?.timeLeft ?? 30,
+      hiddenOptions: [], // Reset 50:50 for new question
     };
 
     roundStates.set(key, next);
+
+    console.log(`[SHOW QUESTION] Round ${roundId}, Question ${questionId}`);
 
     return c.json({
       success: true,
@@ -94,14 +116,23 @@ app.post("/reveal-answer", async (c) => {
     const key = getRoundKey(roundId);
     const prev = roundStates.get(key);
 
+    if (!prev) {
+      return c.json(
+        { success: false, error: "No active question" },
+        400
+      );
+    }
+
     const next: RoundState = {
-      currentQuestionId: prev?.currentQuestionId ?? questionId,
+      ...prev,
       isAnswerRevealed: true,
-      isTimerRunning: prev?.isTimerRunning ?? false,
-      timeLeft: prev?.timeLeft ?? 30,
+      isTimerRunning: false, // Stop timer when revealing
+      timeLeft: prev.timeLeft,
     };
 
     roundStates.set(key, next);
+
+    console.log(`[REVEAL ANSWER] Round ${roundId}, Question ${questionId}`);
 
     return c.json({ success: true, data: next });
   } catch (err) {
@@ -126,20 +157,67 @@ app.post("/start-timer", async (c) => {
     const key = getRoundKey(roundId);
     const prev = roundStates.get(key);
 
-    const seconds = duration && duration > 0 ? duration : prev?.timeLeft ?? 30;
+    const seconds = duration && duration > 0 ? duration : 30;
 
     const next: RoundState = {
       currentQuestionId: prev?.currentQuestionId ?? null,
       isAnswerRevealed: prev?.isAnswerRevealed ?? false,
       isTimerRunning: true,
       timeLeft: seconds,
+      timerStartTime: Date.now(),
+      hiddenOptions: prev?.hiddenOptions ?? [],
     };
 
     roundStates.set(key, next);
 
+    console.log(`[START TIMER] Round ${roundId}, Duration ${seconds}s`);
+
     return c.json({ success: true, data: next });
   } catch (err) {
     console.error("start-timer error:", err);
+    return c.json({ success: false, error: "Internal server error" }, 500);
+  }
+});
+
+// ------------ USE 50:50 ------------
+app.post("/use-5050", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { roundId, questionId, hiddenOptions } = body as {
+      roundId?: number | string;
+      questionId?: number;
+      hiddenOptions?: string[];
+    };
+
+    if (!roundId || !questionId || !hiddenOptions) {
+      return c.json(
+        { success: false, error: "Missing roundId, questionId, or hiddenOptions" },
+        400
+      );
+    }
+
+    const key = getRoundKey(roundId);
+    const prev = roundStates.get(key);
+
+    if (!prev) {
+      return c.json(
+        { success: false, error: "No active question" },
+        400
+      );
+    }
+
+    const next: RoundState = {
+      ...prev,
+      hiddenOptions,
+    };
+
+    roundStates.set(key, next);
+
+    console.log(`[50:50] Round ${roundId}, Hidden: ${hiddenOptions.join(', ')}`);
+
+    return c.json({ success: true, data: next });
+  } catch (err) {
+    console.error("use-5050 error:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
@@ -160,20 +238,42 @@ app.get("/round/:roundId/state", (c) => {
           isAnswerRevealed: false,
           isTimerRunning: false,
           timeLeft: 30,
+          hiddenOptions: [],
         } satisfies RoundState,
       });
     }
 
-    return c.json({ success: true, data: state });
+    // Return state with calculated time left
+    const actualTimeLeft = getActualTimeLeft(state);
+    
+    const responseState: RoundState = {
+      ...state,
+      timeLeft: actualTimeLeft,
+    };
+
+    return c.json({ success: true, data: responseState });
   } catch (err) {
     console.error("get round state error:", err);
     return c.json({ success: false, error: "Internal server error" }, 500);
   }
 });
 
+// ------------ DEBUG: List all states ------------
+app.get("/debug/states", (c) => {
+  const states: Record<string, any> = {};
+  roundStates.forEach((value, key) => {
+    states[key] = {
+      ...value,
+      actualTimeLeft: getActualTimeLeft(value),
+    };
+  });
+  return c.json({ states });
+});
+
 // ------------ START SERVER ------------
-const port = 3000;
-console.log(`Hono server running at http://localhost:${port}`);
+const port = 3001;
+console.log(`🚀 Hono server running at http://localhost:${port}`);
+console.log(`📡 Ready to receive quiz commands...`);
 
 serve({
   fetch: app.fetch,

@@ -5,9 +5,9 @@ import { prisma } from "@/lib/prisma";
 // GET: return current live state (plus question data)
 export async function GET(
   _req: Request,
-  context: { params: Promise<{ eventId: string }> }
+  { params }: { params: { eventId: string } }
 ) {
-  const { eventId } = await context.params;
+  const { eventId } = params;
   const eId = Number(eventId);
 
   const state = await prisma.eventState.findUnique({
@@ -40,9 +40,9 @@ export async function GET(
 // POST: update state (host actions)
 export async function POST(
   req: Request,
-  context: { params: Promise<{ eventId: string }> }
+  { params }: { params: { eventId: string } }
 ) {
-  const { eventId } = await context.params;
+  const { eventId } = params;
   const eId = Number(eventId);
   const body = await req.json();
 

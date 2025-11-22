@@ -1,4 +1,4 @@
-import AdminLayout from "../../../AdminLayout";
+import AdminLayout from "../../../../../../AdminLayout";
 import { prisma } from "@/lib/prisma";
 
 export default async function CreateQuestionPage({
